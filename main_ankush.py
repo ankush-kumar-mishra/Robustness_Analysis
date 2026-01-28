@@ -230,6 +230,42 @@ def save_to_csv(filename, data, thresholds, directory_data):
     
     print(f"CSV file '{filepath}' has been created successfully!")
 
+def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration','annealing_T','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
+             name="bagged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport"):
+    #Variable Definitions: 
+        #independent --> an array of all column titles that are CONSISTENT between all versions of the sample, eg processing conditions or sample #
+        #dependent --> Also and array of column headers, this time focusing on the columns to be averaged
+
+    #independent=['set','donor_ratio','concentration','annealing_T','spinspeed','acetone_v_perc'] #For example
+    #dependent = ['pce','voc','jsc','ff']
+    if filter == True:
+        df = df[df['status'].str.lower()=='accept']
+        df = df[df['filter_trial'].str.lower()=='accept']
+
+    #bootdf = df.groupby(ind).nth(nth).reset_index()
+    bootdf = (
+        df
+        .groupby(ind, group_keys=False)
+        .apply(lambda g: g.iloc[nth % len(g)])
+        .reset_index(drop=True)
+    )
+
+    bootdf.head()
+    if exporttocsv == True: bootdf.to_csv(name, index=False)
+
+    if exporttocsv:
+        # Ensure filename ends with .csv
+        if not name.endswith(".csv"):
+            name = name + ".csv"
+
+        # Convert path to Path object (no trailing slash required)
+        outdir = Path(path)
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        bootdf.to_csv(outdir / name, index=False)
+
+    return bootdf
+
 
 # %% [markdown]
 # # Configuration
@@ -239,21 +275,27 @@ def save_to_csv(filename, data, thresholds, directory_data):
 directory_figure = 'Figures'
 directory_data = 'DataExport'
 filename = 'DOE_Ace_avg.csv'  # Update with your filename
+baggingname = filename[:-4]+'_bag'
+
+#Bagging Parameters
 
 # Parameters
 input_headers = ['donor_ratio', 'concentration', 'spinspeed', 'annealing_t', 'sol_add_v_perc']
 output_header = ['pce']
 random_state = 42
 test_size = 0.2
+total_bags = 5 
+bag = 0 #integer
+
 
 # Parameter bounds for prediction grid
 l_limit = np.array([0.5, 8.0, 800, 55, 0.0])
 u_limit = np.array([1.5, 22, 6000, 130, 5.0])
 
 # Grid resolution
-resolution = 20
-threshold_pce = 9  # User Input on minimum PCE threshold
-number_of_thresholds = 16 # Number of thresholds to analyze between initial threshold and max PCE
+resolution = 10 #Default: 20
+threshold_pce = 9  # User Input on minimum PCE threshold, recommend 9
+number_of_thresholds = 4 # Number of thresholds to analyze between initial threshold and max PCE, default 16
 
 # %% [markdown]
 # # Load Data
@@ -264,6 +306,36 @@ df = df[df['status'].str.lower() == 'accept']
 df = df[df['filter_trial'].str.lower() == 'accept']
 
 print(f"Loaded {len(df)} samples")
+
+# %% Breakdown and PseudoBagging
+pseudobag=True
+if pseudobag:
+    for n in range(total_bags):
+        #place data in the data export folder
+        opvpseudobag(df,nth=n,ind=input_headers,dep=output_header,name=baggingname+"_"+str(n),path=directory_data) 
+
+    filename = filename[:-4] +"_bag_" + str(bag) + ".csv"
+    df = pd.read_csv(os.path.join(directory_data,filename)) #Trial Comparison
+
+    directory_figure = os.path.join(directory_figure,str(bag))
+    directory_data =os.path.join(directory_data,str(bag))
+
+
+    df = df[df['status'].str.lower()=='accept']
+    df = df[df['filter_trial'].str.lower()=='accept']
+
+    # Create the directory_data if it doesn't exist
+    if not os.path.exists(directory_data):
+        os.makedirs(directory_data)
+    # Create the directory_data if it doesn't exist
+    if not os.path.exists(directory_figure):
+        os.makedirs(directory_figure)
+
+    print("Data Directory: "+directory_data)
+    print("Figure Directory: "+directory_figure)
+
+print(filename + " Will be imported")
+
 
 # %% [markdown]
 # # K-means Train-Test Split
