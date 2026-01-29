@@ -10,6 +10,7 @@ from pathlib import Path
 from itertools import product
 from tqdm.notebook import tqdm
 import csv
+import time
 
 # ML imports
 from sklearn.preprocessing import StandardScaler
@@ -47,7 +48,7 @@ def elbow_method(df, headers, max_clusters=20, directory_figure='Figures'):
     os.makedirs(directory_figure, exist_ok=True)
     filepath = os.path.join(directory_figure, 'kmeans_elbow.png')
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     return normalized_input_df
 
@@ -390,6 +391,24 @@ r2 = evaluate_model(y_test, y_pred, "Random Forest Pipeline")
 X_full = df[input_headers]
 y_full = df[output_header].values.ravel()
 rfA_pipe.fit(X_full, y_full)
+
+# %% Create Feature importance plot
+# Feature importance on default RF model
+rf_model = rfA_pipe.named_steps['rf']
+start_time = time.time()
+importances_rfA = rf_model.feature_importances_
+std = np.std([tree.feature_importances_ for tree in rf_model.estimators_], axis=0)
+elapsed_time = time.time() - start_time
+
+
+forest_importances = pd.Series(importances_rfA, index=input_headers)
+
+fig, ax = plt.subplots()
+forest_importances.plot.bar(yerr=std, ax=ax)
+ax.set_title("Feature importances using MDI")
+ax.set_ylabel("Mean decrease in impurity")
+fig.tight_layout()
+fig.savefig(os.path.join(directory_figure, "feature_importance_rf.png"), dpi=300, bbox_inches='tight')
 # %% [markdown]
 # # Generate Prediction Grid
 
