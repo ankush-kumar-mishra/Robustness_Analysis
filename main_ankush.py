@@ -11,7 +11,7 @@ from itertools import product
 from tqdm.notebook import tqdm
 import csv
 import time
-
+from sklearn.inspection import PartialDependenceDisplay
 # ML imports
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
@@ -409,6 +409,112 @@ ax.set_title("Feature importances using MDI")
 ax.set_ylabel("Mean decrease in impurity")
 fig.tight_layout()
 fig.savefig(os.path.join(directory_figure, "feature_importance_rf.png"), dpi=300, bbox_inches='tight')
+
+# %% Partial Dependence Plots
+
+def axis_label(var):
+    entry = label_map.get(var)
+    if entry is None:
+        return var
+    if entry["unit"]:
+        return f"{entry['name']} ({entry['unit']})"
+    return entry["name"]
+
+
+def title_label(var):
+    entry = label_map.get(var)
+    if entry is None:
+        return var
+    return entry["name"]
+
+
+label_map = {
+    "spinspeed": {
+        "name": "Spin Speed",
+        "unit": "rpm"
+    },
+    "sol_add_v_perc": {
+        "name": "Solvent Additive",
+        "unit": "v/v %"
+    },
+    "concentration": {
+        "name": "Concentration",
+        "unit": "mg/mL"
+    },
+    "annealing_t": {
+        "name": "Annealing Temperature",
+        "unit": "°C"
+    },
+    "donor_ratio": {
+        "name": "Donor Ratio",
+        "unit": None
+    }
+}
+
+
+#1D Partial Dependence Plots
+feature_list = X_full.columns.tolist()
+
+for feature in feature_list:
+    fig, ax = plt.subplots(figsize=(5, 4))
+
+
+    disp=PartialDependenceDisplay.from_estimator(
+        estimator=rfA_pipe,
+        X=X_full,
+        features=[feature],
+        kind='average',
+        grid_resolution=25,
+        ax=ax
+    )
+    # --- IMPORTANT: override labels AFTER PDP creation ---
+    disp.axes_[0, 0].set_xlabel(axis_label(feature))
+    disp.axes_[0, 0].set_title(f"PDP: {title_label(feature)}")
+
+    plt.tight_layout()
+    filepath = os.path.join(directory_figure,'PDP1D_'+feature)
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+
+    plt.close()
+
+
+#2D Partial Dependence Plots
+feature_pairs = [
+    ('donor_ratio', 'spinspeed'),
+    ('concentration', 'spinspeed'),
+    ('donor_ratio','concentration'),
+    ('annealing_t', 'sol_add_v_perc'),
+    ('donor_ratio', 'sol_add_v_perc'),
+    ('spinspeed','annealing_t'),
+    ('annealing_t','concentration')
+]
+
+for f1, f2 in feature_pairs:
+
+    # --- Create new figure for each PDP ---
+    fig, ax = plt.subplots(figsize=(5, 4))
+
+    disp=PartialDependenceDisplay.from_estimator(
+        estimator=rfA_pipe,
+        X=X_full,
+        features=[(f1, f2)],
+        kind='average',
+        grid_resolution=25,
+        ax=ax
+    )
+
+    # --- IMPORTANT: override labels AFTER PDP creation ---
+    disp.axes_[0, 0].set_xlabel(axis_label(f1))
+    disp.axes_[0, 0].set_ylabel(axis_label(f2))
+
+    # --- Titles and labels ---
+    ax.set_title(f"2D Partial Dependence: {title_label(f1)} vs {title_label(f2)}")
+
+    plt.tight_layout()
+
+    filepath = os.path.join(directory_figure,'PDP2D_'+f1+"_"+f2)
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
 # %% [markdown]
 # # Generate Prediction Grid
 
