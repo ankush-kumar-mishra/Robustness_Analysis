@@ -11,6 +11,7 @@ from itertools import product
 from tqdm.notebook import tqdm
 import csv
 import time
+import datetime
 from sklearn.inspection import PartialDependenceDisplay
 # ML imports
 from sklearn.preprocessing import StandardScaler
@@ -88,7 +89,7 @@ def perform_ks_test(train_indices, test_indices, df, columns, directory_data="Da
     print(f"KS test results saved to: {file_path}")
     return ks_results
 
-def evaluate_model(y_test, y_pred, model_name):
+def evaluate_model(y_test, y_pred, model_name,directory='DataExport',logfile='modeloutput.csv'):
     """Evaluate model performance"""
     mse = mean_squared_error(y_test, y_pred)
     evs = explained_variance_score(y_test, y_pred)
@@ -102,6 +103,32 @@ def evaluate_model(y_test, y_pred, model_name):
     print(f"  R²: {r2:.3f}")
     print(f"  Spearman: {spearman:.3f}")
     print(f"  Pearson: {pearson:.3f}")
+    
+    headers = ['Model','Mean Squared Error','Explained Variance','R^2','Timestamp','Spearman','Pearson']
+    #filename = 'modeloutput.csv'
+    file_path = os.path.join(directory, logfile)
+    current_datetime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Determine whether to write headers: file should not exist or be empty
+    write_headers = not os.path.exists(file_path) or os.stat(file_path).st_size == 0    
+    
+    # Open the file in append mode (creates the file if it does not exist)
+    with open(file_path, 'a', newline='') as file:
+        writer = csv.writer(file)
+        # Write the header if necessary
+        if write_headers:
+            writer.writerow(headers)
+        # Write the data
+        writer.writerow([model_name,
+                         np.round(mean_squared_error(y_test, y_pred), 3),
+                         np.round(explained_variance_score(y_test, y_pred), 3),
+                         np.round(r2_score(y_test, y_pred), 3),
+                         current_datetime,
+                         np.round(spearmanr(y_test, y_pred), 3),
+                         np.round(pearsonr(y_test, y_pred), 3)
+                         ])
+        
+    return np.round(r2_score(y_test, y_pred), 3)
     
     return r2
 
@@ -120,6 +147,7 @@ def find_connected_components(grid):
         neighbors = [tuple(np.array(position) + offset) for offset in neighbor_offsets]
         return [pos for pos in neighbors if all(0 <= pos[i] < grid_shape[i] for i in range(num_dims))]
 
+    total = np.prod(grid_shape)
     for position in tqdm(np.ndindex(grid_shape), desc="Scanning grid", total=np.prod(grid_shape)):
         if (grid[position] == 1) and (not visited[position]):
             stack = [position]
@@ -267,6 +295,33 @@ def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration
 
     return bootdf
 
+def avgsample (df,ind=['set','donor_ratio','concentration','annealing_T','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
+            name="averaged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport/"):
+    #Variable Definitions: 
+        #independent --> an array of all column titles that are CONSISTENT between all versions of the sample, eg processing conditions or sample #
+        #dependent --> Also and array of column headers, this time focusing on the columns to be averaged
+
+    #independent=['set','donor_ratio','concentration','annealing_T','spinspeed','acetone_v_perc'] #For example
+    #dependent = ['pce','voc','jsc','ff']
+    if filter == True:
+        df = df[df['status'].str.lower()=='accept']
+        df = df[df['filter_trial'].str.lower()=='accept']
+
+    avgdf = df.groupby(ind)[dep].mean(numeric_only=True).round(decimal).reset_index() #Added code for averaging by sample
+    avgdf.head()
+    if exporttocsv == True: avgdf.to_csv(name, index=False)
+
+    if exporttocsv==True:
+        if name[-4:] != ".csv":
+            name = name+".csv"
+        if not (path[-1] == "/"):
+            raise Exception("Remember to include a trailing slash on the folder directory")
+        filepath = Path(path)
+        filepath.mkdir(parents=True, exist_ok=True)
+        avgdf.to_csv(filepath/name, index = False)
+
+    return avgdf
+
 
 # %% [markdown]
 # # Configuration
@@ -275,8 +330,8 @@ def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration
 # Paths
 directory_figure = 'Figures'
 directory_data = 'DataExport'
-filename = 'DOE_Ace_avg.csv'  # Update with your filename
-baggingname = filename[:-4]+'_bag'
+filename = 'DOE_Ace.csv'  # Update with your filename
+baggingname = filename[:-4]+'_bag'#suffix or name format to use for bagged file versions
 
 #Bagging Parameters
 
@@ -286,7 +341,7 @@ output_header = ['pce']
 random_state = 42
 test_size = 0.2
 total_bags = 5 
-bag = 0 #integer
+bag = None #integer --> Default is None or integer to refer to the chosen bag number
 
 
 # Parameter bounds for prediction grid
@@ -309,8 +364,7 @@ df = df[df['filter_trial'].str.lower() == 'accept']
 print(f"Loaded {len(df)} samples")
 
 # %% Breakdown and PseudoBagging
-pseudobag=True
-if pseudobag:
+if bag is not None:
     for n in range(total_bags):
         #place data in the data export folder
         opvpseudobag(df,nth=n,ind=input_headers,dep=output_header,name=baggingname+"_"+str(n),path=directory_data) 
@@ -385,7 +439,10 @@ rfA_pipe.fit(X_train, y_train)
 
 # Predict and evaluate
 y_pred = rfA_pipe.predict(X_test)
-r2 = evaluate_model(y_test, y_pred, "Random Forest Pipeline")
+name = "Random Forest Pipeline"
+if (bag is not None): 
+    name = "Random Forest Pipeline (Bag "+str(bag)+")"
+r2 = evaluate_model(y_test, y_pred, name)
 
 # Retrain on full dataset for predictions
 X_full = df[input_headers]
