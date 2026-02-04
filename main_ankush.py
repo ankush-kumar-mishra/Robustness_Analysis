@@ -148,8 +148,9 @@ def find_connected_components(grid):
         return [pos for pos in neighbors if all(0 <= pos[i] < grid_shape[i] for i in range(num_dims))]
 
     total = np.prod(grid_shape)
-
-    for position in tqdm(np.ndindex(grid_shape), desc="Scanning grid", total=np.prod(grid_shape)):
+    total_component = np.count_nonzero(grid == 1)
+    pbar = tqdm(total=total_component, desc="Scanning Components")
+    for position in np.ndindex(grid_shape):
         if (grid[position] == 1) and (not visited[position]):
             stack = [position]
             component = np.zeros(grid_shape, dtype=bool)
@@ -157,11 +158,13 @@ def find_connected_components(grid):
 
             while stack:
                 current_pos = stack.pop()
+                before = np.count_nonzero(visited)
                 if not visited[current_pos]:
                     visited[current_pos] = True
                     component[current_pos] = True
+                    after = np.count_nonzero(visited)
+                    pbar.update(after - before)
                     component_index.append(current_pos)
-                    
                     for neighbor in get_neighbors(current_pos):
                         if (grid[neighbor] == 1) and (not visited[neighbor]):
                             stack.append(neighbor)
