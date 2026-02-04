@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 from itertools import product
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 import csv
 import time
 import datetime
@@ -148,6 +148,7 @@ def find_connected_components(grid):
         return [pos for pos in neighbors if all(0 <= pos[i] < grid_shape[i] for i in range(num_dims))]
 
     total = np.prod(grid_shape)
+
     for position in tqdm(np.ndindex(grid_shape), desc="Scanning grid", total=np.prod(grid_shape)):
         if (grid[position] == 1) and (not visited[position]):
             stack = [position]
@@ -259,7 +260,7 @@ def save_to_csv(filename, data, thresholds, directory_data):
     
     print(f"CSV file '{filepath}' has been created successfully!")
 
-def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration','annealing_T','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
+def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration','annealing_t','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
              name="bagged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport"):
     #Variable Definitions: 
         #independent --> an array of all column titles that are CONSISTENT between all versions of the sample, eg processing conditions or sample #
@@ -295,8 +296,8 @@ def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration
 
     return bootdf
 
-def avgsample (df,ind=['set','donor_ratio','concentration','annealing_T','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
-            name="averaged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport/"):
+def avgsample (df,ind=['set','donor_ratio','concentration','annealing_t','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
+             name="averaged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport/"):
     #Variable Definitions: 
         #independent --> an array of all column titles that are CONSISTENT between all versions of the sample, eg processing conditions or sample #
         #dependent --> Also and array of column headers, this time focusing on the columns to be averaged
@@ -307,7 +308,8 @@ def avgsample (df,ind=['set','donor_ratio','concentration','annealing_T','spinsp
         df = df[df['status'].str.lower()=='accept']
         df = df[df['filter_trial'].str.lower()=='accept']
 
-    avgdf = df.groupby(ind)[dep].mean(numeric_only=True).round(decimal).reset_index() #Added code for averaging by sample
+    #avgdf = df.groupby(ind)[dep].mean(numeric_only=True).round(decimal).reset_index() #Added code for averaging by sample
+    avgdf = df.groupby(ind).mean(numeric_only=True).round(decimal).reset_index() #New Version to accept all outputs
     avgdf.head()
     if exporttocsv == True: avgdf.to_csv(name, index=False)
 
@@ -330,6 +332,7 @@ def avgsample (df,ind=['set','donor_ratio','concentration','annealing_T','spinsp
 # Paths
 directory_figure = 'Figures'
 directory_data = 'DataExport'
+#filename = 'DOE_Ace_avg.csv'  # Update with your filename
 filename = 'DOE_Ace.csv'  # Update with your filename
 baggingname = filename[:-4]+'_bag'#suffix or name format to use for bagged file versions
 
@@ -360,10 +363,9 @@ number_of_thresholds = 4 # Number of thresholds to analyze between initial thres
 df = pd.read_csv(filename)
 df = df[df['status'].str.lower() == 'accept']
 df = df[df['filter_trial'].str.lower() == 'accept']
-
 print(f"Loaded {len(df)} samples")
 
-# %% Breakdown and PseudoBagging
+# %% Breakdown and PseudoBagging OR averaging
 if bag is not None:
     for n in range(total_bags):
         #place data in the data export folder
@@ -388,8 +390,14 @@ if bag is not None:
 
     print("Data Directory: "+directory_data)
     print("Figure Directory: "+directory_figure)
+    print(filename + " Will be imported")
 
-print(filename + " Will be imported")
+else: 
+    avgname = filename[:-4]+'_avg.csv'
+    df_avg = avgsample(df,ind=input_headers,dep=output_header,name=avgname)
+    print(f"Averaged down to {len(df_avg)} samples")
+    df = df_avg
+
 
 
 # %% [markdown]
@@ -647,7 +655,7 @@ persistence_thresholds = np.linspace(start=threshold_pce, stop=y_pred_grid.max()
 components_info_plot = [[] for _ in range(number_of_thresholds)]
 
 #UPDATED LOOP
-for index, value in tqdm(enumerate(persistence_thresholds), total=len(persistence_thresholds)):
+for index, value in tqdm(enumerate(persistence_thresholds),desc="Iterating Thresholds", total=len(persistence_thresholds)):
     for component_num, component_indices in enumerate(components_indices, 1):
         # Collect information for the component
         components_info_plot[index] = analyze_components(
