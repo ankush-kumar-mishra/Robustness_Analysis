@@ -341,10 +341,11 @@ def avgsample (df,ind=['set','donor_ratio','concentration','annealing_t','spinsp
 
 # %%
 # Paths
-directory_figure = 'Figures'
-directory_data = 'DataExport'
-#filename = 'DOE_Ace_avg.csv'  # Update with your filename
 filename = 'DOE_Ace.csv'  # Update with your filename
+base_name, ext = os.path.splitext(filename)
+directory_figure = os.path.join(base_name, 'Figures')
+directory_data = os.path.join(base_name, 'DataExport')
+#filename = 'DOE_Ace_avg.csv'  # Update with your filename
 baggingname = filename[:-4]+'_bag'#suffix or name format to use for bagged file versions
 
 #Bagging Parameters
