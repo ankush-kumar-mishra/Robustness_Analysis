@@ -178,7 +178,7 @@ def convert_to_actual_values(normalized_indices, l_limit, u_limit):
     """Convert normalized indices to actual parameter values"""
     return l_limit + (normalized_indices * (u_limit - l_limit))
 
-def calculate_fill_factor(component_indices, y_pred, shape, threshold, pce_max):
+def calculate_fill_factor(component_indices, y_pred, shape, threshold, pce_max, progress_callback=None):
     """Calculate fill factor (robustness metric) for a component"""
     fraction_total = 0
     
@@ -191,6 +191,8 @@ def calculate_fill_factor(component_indices, y_pred, shape, threshold, pce_max):
         
         if (pce - threshold) >= 0:
             fraction_total += fraction_point
+        if progress_callback is not None:
+            progress_callback(1)
     
     if len(component_indices) == 0:
         return 0
@@ -201,7 +203,13 @@ def calculate_fill_factor(component_indices, y_pred, shape, threshold, pce_max):
 def analyze_components(components_indices, y_pred, x_test, shape, threshold, l_limit, u_limit):
     """Analyze connected components and extract statistics"""
     components_info = []
-    
+    def update_progress(n):
+        pbar.update(n)
+
+    total_points = sum(len(c) for c in components_indices)
+    pbar = tqdm(total=total_points, desc="Analyzing components")
+
+
     for component_num, component_indices in enumerate(components_indices, 1):
         pce_values = [y_pred[np.ravel_multi_index(idx, shape)] for idx in component_indices]
         
@@ -224,7 +232,7 @@ def analyze_components(components_indices, y_pred, x_test, shape, threshold, l_l
         normalized_max_pce_index = x_test[np.ravel_multi_index(max_pce_index, shape)]
         
         # Calculate fill factor
-        fill_factor = calculate_fill_factor(component_indices, y_pred, shape, threshold, max_pce)
+        fill_factor = calculate_fill_factor(component_indices, y_pred, shape, threshold, max_pce,progress_callback=update_progress)
 
         #Fallback values for nonexistent components
         if num_points == 0:
@@ -244,7 +252,7 @@ def analyze_components(components_indices, y_pred, x_test, shape, threshold, l_l
             "stats_p84": stats_p84,
             "max_pce_coordinates": normalized_max_pce_index
         })
-    
+    pbar.close()
     return components_info
 
 def save_to_csv(filename, data, thresholds, directory_data):
