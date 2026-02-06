@@ -307,8 +307,8 @@ def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration
 
     return bootdf
 
-def avgsample (df,ind=['set','donor_ratio','concentration','annealing_t','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
-             name="averaged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport/"):
+def avgsample (df,ind=['donor_ratio','concentration','annealing_t','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
+             name="averaged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport/",id = 'set'):
     #Variable Definitions: 
         #independent --> an array of all column titles that are CONSISTENT between all versions of the sample, eg processing conditions or sample #
         #dependent --> Also and array of column headers, this time focusing on the columns to be averaged
@@ -321,7 +321,7 @@ def avgsample (df,ind=['set','donor_ratio','concentration','annealing_t','spinsp
 
     #avgdf = df.groupby(ind)[dep].mean(numeric_only=True).round(decimal).reset_index() #Added code for averaging by sample
     avgdf = df.groupby(ind).mean(numeric_only=True).round(decimal).reset_index() #New Version to accept all outputs
-    avgdf.head()
+    avgdf = avgdf.sort_values(by=id)    
     if exporttocsv == True: avgdf.to_csv(name, index=False)
 
     if exporttocsv==True:
@@ -332,6 +332,7 @@ def avgsample (df,ind=['set','donor_ratio','concentration','annealing_t','spinsp
         filepath = Path(path)
         filepath.mkdir(parents=True, exist_ok=True)
         avgdf.to_csv(filepath/name, index = False)
+        print(f"[avgsample] Averaged data exported to: {filepath/name}")
 
     return avgdf
 
@@ -341,7 +342,7 @@ def avgsample (df,ind=['set','donor_ratio','concentration','annealing_t','spinsp
 
 # %%
 # Paths
-filename = 'DOE_Ace.csv'  # Update with your filename
+filename = 'DOE_Ace_avg_keep.csv'  # Update with your filename
 base_name, ext = os.path.splitext(filename)
 directory_figure = os.path.join(base_name, 'Figures')
 directory_data = os.path.join(base_name, 'DataExport')
@@ -406,7 +407,7 @@ if bag is not None:
 
 else: 
     avgname = filename[:-4]+'_avg.csv'
-    df_avg = avgsample(df,ind=input_headers,dep=output_header,name=avgname)
+    df_avg = avgsample(df,ind=input_headers,dep=output_header,name=avgname,id='set')
     print(f"Averaged down to {len(df_avg)} samples")
     df = df_avg
 
