@@ -308,7 +308,7 @@ def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration
     return bootdf
 
 def avgsample (df,ind=['donor_ratio','concentration','annealing_t','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
-             name="averaged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport/",id = 'set'):
+             name="averaged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport",id = 'set'):
     #Variable Definitions: 
         #independent --> an array of all column titles that are CONSISTENT between all versions of the sample, eg processing conditions or sample #
         #dependent --> Also and array of column headers, this time focusing on the columns to be averaged
@@ -319,16 +319,28 @@ def avgsample (df,ind=['donor_ratio','concentration','annealing_t','spinspeed','
         df = df[df['status'].str.lower()=='accept']
         df = df[df['filter_trial'].str.lower()=='accept']
 
+    # Sanity check: each ind-group should map to exactly one id
+    id_counts = df.groupby(ind)[id].nunique()
+
+    if (id_counts > 1).any():
+        bad_groups = id_counts[id_counts > 1]
+        raise ValueError(
+            f"[avgsample] Inconsistent '{id}' values detected for some groups.\n"
+            f"Each unique combination of {ind} must map to exactly one '{id}'.\n\n"
+            f"Problematic groups (showing number of unique '{id}' values):\n"
+            f"{bad_groups}"
+        )
+
     #avgdf = df.groupby(ind)[dep].mean(numeric_only=True).round(decimal).reset_index() #Added code for averaging by sample
     avgdf = df.groupby(ind).mean(numeric_only=True).round(decimal).reset_index() #New Version to accept all outputs
     avgdf = avgdf.sort_values(by=id)    
-    if exporttocsv == True: avgdf.to_csv(name, index=False)
+    #if exporttocsv == True: avgdf.to_csv(name, index=False)
 
     if exporttocsv==True:
         if name[-4:] != ".csv":
             name = name+".csv"
-        if not (path[-1] == "/"):
-            raise Exception("Remember to include a trailing slash on the folder directory")
+        #if not (path[-1] == "/"):
+        #    raise Exception("Remember to include a trailing slash on the folder directory")
         filepath = Path(path)
         filepath.mkdir(parents=True, exist_ok=True)
         avgdf.to_csv(filepath/name, index = False)
@@ -342,12 +354,13 @@ def avgsample (df,ind=['donor_ratio','concentration','annealing_t','spinspeed','
 
 # %%
 # Paths
-filename = 'DOE_Ace_avg_keep.csv'  # Update with your filename
+filename = 'DOE_Ace.csv'  # Update with your filename
 base_name, ext = os.path.splitext(filename)
 directory_figure = os.path.join(base_name, 'Figures')
 directory_data = os.path.join(base_name, 'DataExport')
 #filename = 'DOE_Ace_avg.csv'  # Update with your filename
 baggingname = filename[:-4]+'_bag'#suffix or name format to use for bagged file versions
+modeloutputlog = 'modeloutput.csv'
 
 #Bagging Parameters
 
@@ -357,7 +370,7 @@ output_header = ['pce']
 random_state = 42
 test_size = 0.2
 total_bags = 5 
-bag = None #integer --> Default is None or integer to refer to the chosen bag number
+bag = None #integer --> Default is None or integer to refer to the chosen bag number (starts at 0)
 
 
 # Parameter bounds for prediction grid
@@ -385,10 +398,10 @@ if bag is not None:
         opvpseudobag(df,nth=n,ind=input_headers,dep=output_header,name=baggingname+"_"+str(n),path=directory_data) 
 
     filename = filename[:-4] +"_bag_" + str(bag) + ".csv"
-    df = pd.read_csv(os.path.join(directory_data,filename)) #Trial Comparison
-
     directory_figure = os.path.join(directory_figure,str(bag))
     directory_data =os.path.join(directory_data,str(bag))
+    df = pd.read_csv(os.path.join(directory_data,filename)) #Trial Comparison
+
 
 
     df = df[df['status'].str.lower()=='accept']
@@ -407,10 +420,9 @@ if bag is not None:
 
 else: 
     avgname = filename[:-4]+'_avg.csv'
-    df_avg = avgsample(df,ind=input_headers,dep=output_header,name=avgname,id='set')
+    df_avg = avgsample(df,ind=input_headers,dep=output_header,name=avgname,id='set',path=directory_data)
     print(f"Averaged down to {len(df_avg)} samples")
     df = df_avg
-
 
 
 # %% [markdown]
@@ -463,7 +475,7 @@ y_pred = rfA_pipe.predict(X_test)
 name = "Random Forest Pipeline"
 if (bag is not None): 
     name = "Random Forest Pipeline (Bag "+str(bag)+")"
-r2 = evaluate_model(y_test, y_pred, name)
+r2 = evaluate_model(y_test, y_pred, name,directory = directory_data)
 
 # Retrain on full dataset for predictions
 X_full = df[input_headers]
