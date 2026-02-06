@@ -354,7 +354,7 @@ def avgsample (df,ind=['donor_ratio','concentration','annealing_t','spinspeed','
 
 # %%
 # Paths
-filename = 'DOE_Ace.csv'  # Update with your filename
+filename = 'DOE_Ace.csv'  # Update with your filename, DOE_Ace.csv / DOE_1CN.csv
 base_name, ext = os.path.splitext(filename)
 directory_figure = os.path.join(base_name, 'Figures')
 directory_data = os.path.join(base_name, 'DataExport')
@@ -369,7 +369,7 @@ input_headers = ['donor_ratio', 'concentration', 'spinspeed', 'annealing_t', 'so
 output_header = ['pce']
 random_state = 42
 test_size = 0.2
-total_bags = 5 
+total_bags = 6 
 bag = None #integer --> Default is None or integer to refer to the chosen bag number (starts at 0)
 
 
@@ -378,9 +378,9 @@ l_limit = np.array([0.5, 8.0, 800, 55, 0.0])
 u_limit = np.array([1.5, 22, 6000, 130, 5.0])
 
 # Grid resolution
-resolution = 10 #Default: 20
+resolution = 20 #Default: 20
 threshold_pce = 9  # User Input on minimum PCE threshold, recommend 9
-number_of_thresholds = 4 # Number of thresholds to analyze between initial threshold and max PCE, default 16
+number_of_thresholds = 16 # Number of thresholds to analyze between initial threshold and max PCE, default 16
 
 # %% [markdown]
 # # Load Data
@@ -398,9 +398,10 @@ if bag is not None:
         opvpseudobag(df,nth=n,ind=input_headers,dep=output_header,name=baggingname+"_"+str(n),path=directory_data) 
 
     filename = filename[:-4] +"_bag_" + str(bag) + ".csv"
+    df = pd.read_csv(os.path.join(directory_data,filename)) #Trial Comparison
+
     directory_figure = os.path.join(directory_figure,str(bag))
     directory_data =os.path.join(directory_data,str(bag))
-    df = pd.read_csv(os.path.join(directory_data,filename)) #Trial Comparison
 
 
 
