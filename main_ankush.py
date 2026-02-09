@@ -134,6 +134,9 @@ def evaluate_model(y_test, y_pred, model_name,directory='DataExport',logfile='mo
 
 def find_connected_components(grid):
     """Find connected components using iterative depth-first search"""
+    total_active = np.count_nonzero(grid == 1)
+    pbar = tqdm(total=total_active, desc="Exploring components")
+
     grid_shape = grid.shape
     num_dims = len(grid_shape)
     visited = np.zeros(grid_shape, dtype=bool)
@@ -148,8 +151,9 @@ def find_connected_components(grid):
         return [pos for pos in neighbors if all(0 <= pos[i] < grid_shape[i] for i in range(num_dims))]
 
     total = np.prod(grid_shape)
-    total_component = np.count_nonzero(grid == 1)
-    pbar = tqdm(total=total_component, desc="Scanning Components")
+    active_positions = np.argwhere(grid == 1)
+    #total_component = np.count_nonzero(grid == 1)
+    #pbar = tqdm(total=total_component, desc="Scanning Components")
     for position in np.ndindex(grid_shape):
         if (grid[position] == 1) and (not visited[position]):
             stack = [position]
@@ -161,16 +165,22 @@ def find_connected_components(grid):
                 before = np.count_nonzero(visited)
                 if not visited[current_pos]:
                     visited[current_pos] = True
+                    pbar.update(1)
                     component[current_pos] = True
-                    after = np.count_nonzero(visited)
-                    pbar.update(after - before)
+                    #after = np.count_nonzero(visited)
+                    #pbar.update(after - before)
                     component_index.append(current_pos)
                     for neighbor in get_neighbors(current_pos):
                         if (grid[neighbor] == 1) and (not visited[neighbor]):
                             stack.append(neighbor)
             
+            print("DFS finished, appending components...")
+            t2 = time.time()
             components.append(component)
             components_indices.append(component_index)
+            print("Components appended.")
+            t3 = time.time()
+            print(f"component append runtime: {t3 - t2:.1f} s")
 
     return components, components_indices
 
@@ -378,7 +388,7 @@ l_limit = np.array([0.5, 8.0, 800, 55, 0.0])
 u_limit = np.array([1.5, 22, 6000, 130, 5.0])
 
 # Grid resolution
-resolution = 20 #Default: 20
+resolution = 10 #Default: 20
 threshold_pce = 9  # User Input on minimum PCE threshold, recommend 9
 number_of_thresholds = 16 # Number of thresholds to analyze between initial threshold and max PCE, default 16
 
@@ -645,7 +655,10 @@ print(f"Points above threshold: {count_above} ({100*count_above/len(y_pred_grid)
 
 # %%
 # Find connected components
+t0 = time.time()
 components, components_indices = find_connected_components(grid)
+t1 = time.time()
+print(f"find_connected_components runtime: {t1 - t0:.1f} s")
 print(f"Found {len(components)} connected components")
 
 # %%
