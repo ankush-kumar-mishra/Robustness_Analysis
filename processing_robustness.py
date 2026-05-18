@@ -406,7 +406,7 @@ def avgsample (df,ind=['donor_ratio','concentration','annealing_t','spinspeed','
 
 # %%
 # Paths
-filename = 'DOE_Ace.csv'  # Update with your filename, DOE_Ace.csv / DOE_1CN.csv
+filename = 'DOE_Ace_DEMO.csv'  # Update with your filename, DOE_Ace.csv / DOE_1CN.csv
 base_name, ext = os.path.splitext(filename)
 directory_figure = os.path.join(base_name, 'Figures')
 directory_data = os.path.join(base_name, 'DataExport')
