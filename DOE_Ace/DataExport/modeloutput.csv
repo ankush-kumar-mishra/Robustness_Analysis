@@ -1,7 +1,0 @@
-Model,Mean Squared Error,Explained Variance,R^2,Timestamp,Spearman,Pearson
-Random Forest Pipeline,0.493,0.726,0.679,2026-02-06 17:44:30,[0.833 0.01 ],[0.864 0.006]
-Random Forest Pipeline,0.493,0.726,0.679,2026-02-06 20:39:17,[0.833 0.01 ],[0.864 0.006]
-Random Forest Pipeline,0.493,0.726,0.679,2026-02-06 20:42:46,[0.833 0.01 ],[0.864 0.006]
-Random Forest Pipeline,0.493,0.726,0.679,2026-02-06 20:49:43,[0.833 0.01 ],[0.864 0.006]
-Random Forest Pipeline,0.493,0.726,0.679,2026-02-06 20:54:04,[0.833 0.01 ],[0.864 0.006]
-Random Forest Pipeline,0.493,0.726,0.679,2026-02-06 21:01:15,[0.833 0.01 ],[0.864 0.006]

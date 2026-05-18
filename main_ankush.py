@@ -132,6 +132,7 @@ def evaluate_model(y_test, y_pred, model_name,directory='DataExport',logfile='mo
     
     return r2
 
+'''
 def find_connected_components(grid):
     """Find connected components using iterative depth-first search"""
     total_active = np.count_nonzero(grid == 1)
@@ -152,8 +153,6 @@ def find_connected_components(grid):
 
     total = np.prod(grid_shape)
     active_positions = np.argwhere(grid == 1)
-    #total_component = np.count_nonzero(grid == 1)
-    #pbar = tqdm(total=total_component, desc="Scanning Components")
     for position in np.ndindex(grid_shape):
         if (grid[position] == 1) and (not visited[position]):
             stack = [position]
@@ -162,13 +161,10 @@ def find_connected_components(grid):
 
             while stack:
                 current_pos = stack.pop()
-                before = np.count_nonzero(visited)
                 if not visited[current_pos]:
                     visited[current_pos] = True
                     pbar.update(1)
                     component[current_pos] = True
-                    #after = np.count_nonzero(visited)
-                    #pbar.update(after - before)
                     component_index.append(current_pos)
                     for neighbor in get_neighbors(current_pos):
                         if (grid[neighbor] == 1) and (not visited[neighbor]):
@@ -181,6 +177,52 @@ def find_connected_components(grid):
             print("Components appended.")
             t3 = time.time()
             print(f"component append runtime: {t3 - t2:.1f} s")
+
+    return components, components_indices'''
+
+def find_connected_components(grid):
+    """Find connected components using iterative depth-first search"""
+    total_active = np.count_nonzero(grid == 1)
+    pbar = tqdm(total=total_active, desc="Exploring components")
+
+    grid_shape = grid.shape
+    num_dims = len(grid_shape)
+    visited = np.zeros(grid_shape, dtype=bool)
+    components = []
+    components_indices = []
+    
+    neighbor_offsets = np.array(np.meshgrid(*[[-1, 0, 1]] * num_dims)).T.reshape(-1, num_dims)
+    neighbor_offsets = neighbor_offsets[np.any(neighbor_offsets, axis=1)]
+    
+    def get_neighbors(position):
+        neighbors = [tuple(np.array(position) + offset) for offset in neighbor_offsets]
+        return [pos for pos in neighbors if all(0 <= pos[i] < grid_shape[i] for i in range(num_dims))]
+
+    #total = np.prod(grid_shape)
+    #total_component = np.count_nonzero(grid == 1)
+    #pbar = tqdm(total=total_component, desc="Scanning Components")
+    for position in np.ndindex(grid_shape):
+        if (grid[position] == 1) and (not visited[position]):
+            stack = [position]
+            component = np.zeros(grid_shape, dtype=bool)
+            component_index = []
+
+            while stack:
+                current_pos = stack.pop()
+                #before = np.count_nonzero(visited)
+                if not visited[current_pos]:
+                    pbar.update(1)
+                    visited[current_pos] = True
+                    component[current_pos] = True
+                    #after = np.count_nonzero(visited)
+                    #pbar.update(after - before)
+                    component_index.append(current_pos)
+                    for neighbor in get_neighbors(current_pos):
+                        if (grid[neighbor] == 1) and (not visited[neighbor]):
+                            stack.append(neighbor)
+            
+            components.append(component)
+            components_indices.append(component_index)
 
     return components, components_indices
 
@@ -375,12 +417,13 @@ modeloutputlog = 'modeloutput.csv'
 #Bagging Parameters
 
 # Parameters
+trial_id = 'set'
 input_headers = ['donor_ratio', 'concentration', 'spinspeed', 'annealing_t', 'sol_add_v_perc']
 output_header = ['pce']
 random_state = 42
 test_size = 0.2
 total_bags = 6 
-bag = None #integer --> Default is None or integer to refer to the chosen bag number (starts at 0)
+bag = False #integer --> Default is None or integer to refer to the chosen bag number (starts at 0)
 
 
 # Parameter bounds for prediction grid
@@ -388,7 +431,7 @@ l_limit = np.array([0.5, 8.0, 800, 55, 0.0])
 u_limit = np.array([1.5, 22, 6000, 130, 5.0])
 
 # Grid resolution
-resolution = 10 #Default: 20
+resolution = 20 #Default: 20
 threshold_pce = 9  # User Input on minimum PCE threshold, recommend 9
 number_of_thresholds = 16 # Number of thresholds to analyze between initial threshold and max PCE, default 16
 
@@ -405,7 +448,7 @@ print(f"Loaded {len(df)} samples")
 if bag is not None:
     for n in range(total_bags):
         #place data in the data export folder
-        opvpseudobag(df,nth=n,ind=input_headers,dep=output_header,name=baggingname+"_"+str(n),path=directory_data) 
+        opvpseudobag(df,nth=n,ind=[trial_id,*input_headers],dep=output_header,name=baggingname+"_"+str(n),path=directory_data) 
 
     filename = filename[:-4] +"_bag_" + str(bag) + ".csv"
     df = pd.read_csv(os.path.join(directory_data,filename)) #Trial Comparison
@@ -431,7 +474,7 @@ if bag is not None:
 
 else: 
     avgname = filename[:-4]+'_avg.csv'
-    df_avg = avgsample(df,ind=input_headers,dep=output_header,name=avgname,id='set',path=directory_data)
+    df_avg = avgsample(df,ind=[trial_id,*input_headers],dep=output_header,name=avgname,id='set',path=directory_data)
     print(f"Averaged down to {len(df_avg)} samples")
     df = df_avg
 
