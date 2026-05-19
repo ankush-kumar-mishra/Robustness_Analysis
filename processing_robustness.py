@@ -8,9 +8,11 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 from itertools import product
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 import csv
-
+import time
+import datetime
+from sklearn.inspection import PartialDependenceDisplay
 # ML imports
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
@@ -47,7 +49,7 @@ def elbow_method(df, headers, max_clusters=20, directory_figure='Figures'):
     os.makedirs(directory_figure, exist_ok=True)
     filepath = os.path.join(directory_figure, 'kmeans_elbow.png')
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
-    plt.show()
+    plt.close()
     
     return normalized_input_df
 
@@ -87,7 +89,7 @@ def perform_ks_test(train_indices, test_indices, df, columns, directory_data="Da
     print(f"KS test results saved to: {file_path}")
     return ks_results
 
-def evaluate_model(y_test, y_pred, model_name):
+def evaluate_model(y_test, y_pred, model_name,directory='DataExport',logfile='modeloutput.csv'):
     """Evaluate model performance"""
     mse = mean_squared_error(y_test, y_pred)
     evs = explained_variance_score(y_test, y_pred)
@@ -102,10 +104,40 @@ def evaluate_model(y_test, y_pred, model_name):
     print(f"  Spearman: {spearman:.3f}")
     print(f"  Pearson: {pearson:.3f}")
     
+    headers = ['Model','Mean Squared Error','Explained Variance','R^2','Timestamp','Spearman','Pearson']
+    #filename = 'modeloutput.csv'
+    file_path = os.path.join(directory, logfile)
+    current_datetime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Determine whether to write headers: file should not exist or be empty
+    write_headers = not os.path.exists(file_path) or os.stat(file_path).st_size == 0    
+    
+    # Open the file in append mode (creates the file if it does not exist)
+    with open(file_path, 'a', newline='') as file:
+        writer = csv.writer(file)
+        # Write the header if necessary
+        if write_headers:
+            writer.writerow(headers)
+        # Write the data
+        writer.writerow([model_name,
+                         np.round(mean_squared_error(y_test, y_pred), 3),
+                         np.round(explained_variance_score(y_test, y_pred), 3),
+                         np.round(r2_score(y_test, y_pred), 3),
+                         current_datetime,
+                         np.round(spearmanr(y_test, y_pred), 3),
+                         np.round(pearsonr(y_test, y_pred), 3)
+                         ])
+        
+    return np.round(r2_score(y_test, y_pred), 3)
+    
     return r2
 
+'''
 def find_connected_components(grid):
     """Find connected components using iterative depth-first search"""
+    total_active = np.count_nonzero(grid == 1)
+    pbar = tqdm(total=total_active, desc="Exploring components")
+
     grid_shape = grid.shape
     num_dims = len(grid_shape)
     visited = np.zeros(grid_shape, dtype=bool)
@@ -119,7 +151,9 @@ def find_connected_components(grid):
         neighbors = [tuple(np.array(position) + offset) for offset in neighbor_offsets]
         return [pos for pos in neighbors if all(0 <= pos[i] < grid_shape[i] for i in range(num_dims))]
 
-    for position in tqdm(np.ndindex(grid_shape), desc="Scanning grid", total=np.prod(grid_shape)):
+    total = np.prod(grid_shape)
+    active_positions = np.argwhere(grid == 1)
+    for position in np.ndindex(grid_shape):
         if (grid[position] == 1) and (not visited[position]):
             stack = [position]
             component = np.zeros(grid_shape, dtype=bool)
@@ -129,9 +163,60 @@ def find_connected_components(grid):
                 current_pos = stack.pop()
                 if not visited[current_pos]:
                     visited[current_pos] = True
+                    pbar.update(1)
                     component[current_pos] = True
                     component_index.append(current_pos)
-                    
+                    for neighbor in get_neighbors(current_pos):
+                        if (grid[neighbor] == 1) and (not visited[neighbor]):
+                            stack.append(neighbor)
+            
+            print("DFS finished, appending components...")
+            t2 = time.time()
+            components.append(component)
+            components_indices.append(component_index)
+            print("Components appended.")
+            t3 = time.time()
+            print(f"component append runtime: {t3 - t2:.1f} s")
+
+    return components, components_indices'''
+
+def find_connected_components(grid):
+    """Find connected components using iterative depth-first search"""
+    total_active = np.count_nonzero(grid == 1)
+    pbar = tqdm(total=total_active, desc="Exploring components")
+
+    grid_shape = grid.shape
+    num_dims = len(grid_shape)
+    visited = np.zeros(grid_shape, dtype=bool)
+    components = []
+    components_indices = []
+    
+    neighbor_offsets = np.array(np.meshgrid(*[[-1, 0, 1]] * num_dims)).T.reshape(-1, num_dims)
+    neighbor_offsets = neighbor_offsets[np.any(neighbor_offsets, axis=1)]
+    
+    def get_neighbors(position):
+        neighbors = [tuple(np.array(position) + offset) for offset in neighbor_offsets]
+        return [pos for pos in neighbors if all(0 <= pos[i] < grid_shape[i] for i in range(num_dims))]
+
+    #total = np.prod(grid_shape)
+    #total_component = np.count_nonzero(grid == 1)
+    #pbar = tqdm(total=total_component, desc="Scanning Components")
+    for position in np.ndindex(grid_shape):
+        if (grid[position] == 1) and (not visited[position]):
+            stack = [position]
+            component = np.zeros(grid_shape, dtype=bool)
+            component_index = []
+
+            while stack:
+                current_pos = stack.pop()
+                #before = np.count_nonzero(visited)
+                if not visited[current_pos]:
+                    pbar.update(1)
+                    visited[current_pos] = True
+                    component[current_pos] = True
+                    #after = np.count_nonzero(visited)
+                    #pbar.update(after - before)
+                    component_index.append(current_pos)
                     for neighbor in get_neighbors(current_pos):
                         if (grid[neighbor] == 1) and (not visited[neighbor]):
                             stack.append(neighbor)
@@ -145,7 +230,7 @@ def convert_to_actual_values(normalized_indices, l_limit, u_limit):
     """Convert normalized indices to actual parameter values"""
     return l_limit + (normalized_indices * (u_limit - l_limit))
 
-def calculate_fill_factor(component_indices, y_pred, shape, threshold, pce_max):
+def calculate_fill_factor(component_indices, y_pred, shape, threshold, pce_max, progress_callback=None):
     """Calculate fill factor (robustness metric) for a component"""
     fraction_total = 0
     
@@ -158,6 +243,8 @@ def calculate_fill_factor(component_indices, y_pred, shape, threshold, pce_max):
         
         if (pce - threshold) >= 0:
             fraction_total += fraction_point
+        if progress_callback is not None:
+            progress_callback(1)
     
     if len(component_indices) == 0:
         return 0
@@ -168,7 +255,13 @@ def calculate_fill_factor(component_indices, y_pred, shape, threshold, pce_max):
 def analyze_components(components_indices, y_pred, x_test, shape, threshold, l_limit, u_limit):
     """Analyze connected components and extract statistics"""
     components_info = []
-    
+    def update_progress(n):
+        pbar.update(n)
+
+    total_points = sum(len(c) for c in components_indices)
+    pbar = tqdm(total=total_points, desc="Analyzing components")
+
+
     for component_num, component_indices in enumerate(components_indices, 1):
         pce_values = [y_pred[np.ravel_multi_index(idx, shape)] for idx in component_indices]
         
@@ -191,7 +284,7 @@ def analyze_components(components_indices, y_pred, x_test, shape, threshold, l_l
         normalized_max_pce_index = x_test[np.ravel_multi_index(max_pce_index, shape)]
         
         # Calculate fill factor
-        fill_factor = calculate_fill_factor(component_indices, y_pred, shape, threshold, max_pce)
+        fill_factor = calculate_fill_factor(component_indices, y_pred, shape, threshold, max_pce,progress_callback=update_progress)
 
         #Fallback values for nonexistent components
         if num_points == 0:
@@ -211,7 +304,7 @@ def analyze_components(components_indices, y_pred, x_test, shape, threshold, l_l
             "stats_p84": stats_p84,
             "max_pce_coordinates": normalized_max_pce_index
         })
-    
+    pbar.close()
     return components_info
 
 def save_to_csv(filename, data, thresholds, directory_data):
@@ -230,30 +323,117 @@ def save_to_csv(filename, data, thresholds, directory_data):
     
     print(f"CSV file '{filepath}' has been created successfully!")
 
+def opvpseudobag(df,nth=1,randomstate=42,ind=['set','donor_ratio','concentration','annealing_t','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
+             name="bagged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport"):
+    #Variable Definitions: 
+        #independent --> an array of all column titles that are CONSISTENT between all versions of the sample, eg processing conditions or sample #
+        #dependent --> Also and array of column headers, this time focusing on the columns to be averaged
+
+    #independent=['set','donor_ratio','concentration','annealing_T','spinspeed','acetone_v_perc'] #For example
+    #dependent = ['pce','voc','jsc','ff']
+    if filter == True:
+        df = df[df['status'].str.lower()=='accept']
+        df = df[df['filter_trial'].str.lower()=='accept']
+
+    #bootdf = df.groupby(ind).nth(nth).reset_index()
+    bootdf = (
+        df
+        .groupby(ind, group_keys=False)
+        .apply(lambda g: g.iloc[nth % len(g)])
+        .reset_index(drop=True)
+    )
+
+    bootdf.head()
+    if exporttocsv == True: bootdf.to_csv(name, index=False)
+
+    if exporttocsv:
+        # Ensure filename ends with .csv
+        if not name.endswith(".csv"):
+            name = name + ".csv"
+
+        # Convert path to Path object (no trailing slash required)
+        outdir = Path(path)
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        bootdf.to_csv(outdir / name, index=False)
+
+    return bootdf
+
+def avgsample (df,ind=['donor_ratio','concentration','annealing_t','spinspeed','acetone_v_perc','status','filter_trial'],dep=['pce','voc','jsc','ff'], 
+             name="averaged_data.csv",exporttocsv=True,decimal=4,filter=True,path="DataExport",id = 'set'):
+    #Variable Definitions: 
+        #independent --> an array of all column titles that are CONSISTENT between all versions of the sample, eg processing conditions or sample #
+        #dependent --> Also and array of column headers, this time focusing on the columns to be averaged
+
+    #independent=['set','donor_ratio','concentration','annealing_T','spinspeed','acetone_v_perc'] #For example
+    #dependent = ['pce','voc','jsc','ff']
+    if filter == True:
+        df = df[df['status'].str.lower()=='accept']
+        df = df[df['filter_trial'].str.lower()=='accept']
+
+    # Sanity check: each ind-group should map to exactly one id
+    id_counts = df.groupby(ind)[id].nunique()
+
+    if (id_counts > 1).any():
+        bad_groups = id_counts[id_counts > 1]
+        raise ValueError(
+            f"[avgsample] Inconsistent '{id}' values detected for some groups.\n"
+            f"Each unique combination of {ind} must map to exactly one '{id}'.\n\n"
+            f"Problematic groups (showing number of unique '{id}' values):\n"
+            f"{bad_groups}"
+        )
+
+    #avgdf = df.groupby(ind)[dep].mean(numeric_only=True).round(decimal).reset_index() #Added code for averaging by sample
+    avgdf = df.groupby(ind).mean(numeric_only=True).round(decimal).reset_index() #New Version to accept all outputs
+    avgdf = avgdf.sort_values(by=id)    
+    #if exporttocsv == True: avgdf.to_csv(name, index=False)
+
+    if exporttocsv==True:
+        if name[-4:] != ".csv":
+            name = name+".csv"
+        #if not (path[-1] == "/"):
+        #    raise Exception("Remember to include a trailing slash on the folder directory")
+        filepath = Path(path)
+        filepath.mkdir(parents=True, exist_ok=True)
+        avgdf.to_csv(filepath/name, index = False)
+        print(f"[avgsample] Averaged data exported to: {filepath/name}")
+
+    return avgdf
+
 
 # %% [markdown]
 # # Configuration
 
 # %%
 # Paths
-directory_figure = 'Figures'
-directory_data = 'DataExport'
-filename = 'DOE_Ace_avg.csv'  # Update with your filename
+filename = 'DOE_Ace_DEMO.csv'  # Update with your filename, DOE_Ace.csv / DOE_1CN.csv
+base_name, ext = os.path.splitext(filename)
+directory_figure = os.path.join(base_name, 'Figures')
+directory_data = os.path.join(base_name, 'DataExport')
+#filename = 'DOE_Ace_avg.csv'  # Update with your filename
+baggingname = filename[:-4]+'_bag'#suffix or name format to use for bagged file versions
+modeloutputlog = 'modeloutput.csv'
+
+#Bagging Parameters
 
 # Parameters
+trial_id = 'set'
 input_headers = ['donor_ratio', 'concentration', 'spinspeed', 'annealing_t', 'sol_add_v_perc']
 output_header = ['pce']
 random_state = 42
 test_size = 0.2
+total_bags = 6 
+bag = False #integer --> Default is None or integer to refer to the chosen bag number (starts at 0)
+
 
 # Parameter bounds for prediction grid
 l_limit = np.array([0.5, 8.0, 800, 55, 0.0])
 u_limit = np.array([1.5, 22, 6000, 130, 5.0])
 
 # Grid resolution
-resolution = 20
-threshold_pce = 9  # User Input on minimum PCE threshold
-number_of_thresholds = 16 # Number of thresholds to analyze between initial threshold and max PCE
+resolution = 20 #Default: 20
+threshold_pce = 9  # User Input on minimum PCE threshold, recommend 9
+number_of_thresholds = 16 # Number of thresholds to analyze between initial threshold and max PCE, default 16
 
 # %% [markdown]
 # # Load Data
@@ -262,8 +442,42 @@ number_of_thresholds = 16 # Number of thresholds to analyze between initial thre
 df = pd.read_csv(filename)
 df = df[df['status'].str.lower() == 'accept']
 df = df[df['filter_trial'].str.lower() == 'accept']
-
 print(f"Loaded {len(df)} samples")
+
+# %% Breakdown and PseudoBagging OR averaging
+if bag is not None:
+    for n in range(total_bags):
+        #place data in the data export folder
+        opvpseudobag(df,nth=n,ind=[trial_id,*input_headers],dep=output_header,name=baggingname+"_"+str(n),path=directory_data) 
+
+    filename = filename[:-4] +"_bag_" + str(bag) + ".csv"
+    df = pd.read_csv(os.path.join(directory_data,filename)) #Trial Comparison
+
+    directory_figure = os.path.join(directory_figure,str(bag))
+    directory_data =os.path.join(directory_data,str(bag))
+
+
+
+    df = df[df['status'].str.lower()=='accept']
+    df = df[df['filter_trial'].str.lower()=='accept']
+
+    # Create the directory_data if it doesn't exist
+    if not os.path.exists(directory_data):
+        os.makedirs(directory_data)
+    # Create the directory_data if it doesn't exist
+    if not os.path.exists(directory_figure):
+        os.makedirs(directory_figure)
+
+    print("Data Directory: "+directory_data)
+    print("Figure Directory: "+directory_figure)
+    print(filename + " Will be imported")
+
+else: 
+    avgname = filename[:-4]+'_avg.csv'
+    df_avg = avgsample(df,ind=[trial_id,*input_headers],dep=output_header,name=avgname,id='set',path=directory_data)
+    print(f"Averaged down to {len(df_avg)} samples")
+    df = df_avg
+
 
 # %% [markdown]
 # # K-means Train-Test Split
@@ -312,12 +526,139 @@ rfA_pipe.fit(X_train, y_train)
 
 # Predict and evaluate
 y_pred = rfA_pipe.predict(X_test)
-r2 = evaluate_model(y_test, y_pred, "Random Forest Pipeline")
+name = "Random Forest Pipeline"
+if (bag is not None): 
+    name = "Random Forest Pipeline (Bag "+str(bag)+")"
+r2 = evaluate_model(y_test, y_pred, name,directory = directory_data)
 
 # Retrain on full dataset for predictions
 X_full = df[input_headers]
 y_full = df[output_header].values.ravel()
 rfA_pipe.fit(X_full, y_full)
+
+# %% Create Feature importance plot
+# Feature importance on default RF model
+rf_model = rfA_pipe.named_steps['rf']
+start_time = time.time()
+importances_rfA = rf_model.feature_importances_
+std = np.std([tree.feature_importances_ for tree in rf_model.estimators_], axis=0)
+elapsed_time = time.time() - start_time
+
+
+forest_importances = pd.Series(importances_rfA, index=input_headers)
+
+fig, ax = plt.subplots()
+forest_importances.plot.bar(yerr=std, ax=ax)
+ax.set_title("Feature importances using MDI")
+ax.set_ylabel("Mean decrease in impurity")
+fig.tight_layout()
+fig.savefig(os.path.join(directory_figure, "feature_importance_rf.png"), dpi=300, bbox_inches='tight')
+
+# %% Partial Dependence Plots
+
+def axis_label(var):
+    entry = label_map.get(var)
+    if entry is None:
+        return var
+    if entry["unit"]:
+        return f"{entry['name']} ({entry['unit']})"
+    return entry["name"]
+
+
+def title_label(var):
+    entry = label_map.get(var)
+    if entry is None:
+        return var
+    return entry["name"]
+
+
+label_map = {
+    "spinspeed": {
+        "name": "Spin Speed",
+        "unit": "rpm"
+    },
+    "sol_add_v_perc": {
+        "name": "Solvent Additive",
+        "unit": "v/v %"
+    },
+    "concentration": {
+        "name": "Concentration",
+        "unit": "mg/mL"
+    },
+    "annealing_t": {
+        "name": "Annealing Temperature",
+        "unit": "°C"
+    },
+    "donor_ratio": {
+        "name": "Donor Ratio",
+        "unit": None
+    }
+}
+
+
+#1D Partial Dependence Plots
+feature_list = X_full.columns.tolist()
+
+for feature in feature_list:
+    fig, ax = plt.subplots(figsize=(5, 4))
+
+
+    disp=PartialDependenceDisplay.from_estimator(
+        estimator=rfA_pipe,
+        X=X_full,
+        features=[feature],
+        kind='average',
+        grid_resolution=25,
+        ax=ax
+    )
+    # --- IMPORTANT: override labels AFTER PDP creation ---
+    disp.axes_[0, 0].set_xlabel(axis_label(feature))
+    disp.axes_[0, 0].set_title(f"PDP: {title_label(feature)}")
+
+    plt.tight_layout()
+    filepath = os.path.join(directory_figure,'PDP1D_'+feature)
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+
+    plt.close()
+
+
+#2D Partial Dependence Plots
+feature_pairs = [
+    ('donor_ratio', 'spinspeed'),
+    ('concentration', 'spinspeed'),
+    ('donor_ratio','concentration'),
+    ('annealing_t', 'sol_add_v_perc'),
+    ('donor_ratio', 'sol_add_v_perc'),
+    ('spinspeed','annealing_t'),
+    ('annealing_t','concentration')
+]
+
+for f1, f2 in feature_pairs:
+
+    # --- Create new figure for each PDP ---
+    fig, ax = plt.subplots(figsize=(5, 4))
+
+    disp=PartialDependenceDisplay.from_estimator(
+        estimator=rfA_pipe,
+        X=X_full,
+        features=[(f1, f2)],
+        kind='average',
+        grid_resolution=25,
+        ax=ax
+    )
+
+    # --- IMPORTANT: override labels AFTER PDP creation ---
+    disp.axes_[0, 0].set_xlabel(axis_label(f1))
+    disp.axes_[0, 0].set_ylabel(axis_label(f2))
+
+    # --- Titles and labels ---
+    ax.set_title(f"2D Partial Dependence: {title_label(f1)} vs {title_label(f2)}")
+
+    plt.tight_layout()
+
+    filepath = os.path.join(directory_figure,'PDP2D_'+f1+"_"+f2)
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
 # %% [markdown]
 # # Generate Prediction Grid
 
@@ -357,7 +698,10 @@ print(f"Points above threshold: {count_above} ({100*count_above/len(y_pred_grid)
 
 # %%
 # Find connected components
+t0 = time.time()
 components, components_indices = find_connected_components(grid)
+t1 = time.time()
+print(f"find_connected_components runtime: {t1 - t0:.1f} s")
 print(f"Found {len(components)} connected components")
 
 # %%
@@ -393,7 +737,7 @@ persistence_thresholds = np.linspace(start=threshold_pce, stop=y_pred_grid.max()
 components_info_plot = [[] for _ in range(number_of_thresholds)]
 
 #UPDATED LOOP
-for index, value in tqdm(enumerate(persistence_thresholds), total=len(persistence_thresholds)):
+for index, value in tqdm(enumerate(persistence_thresholds),desc="Iterating Thresholds", total=len(persistence_thresholds)):
     for component_num, component_indices in enumerate(components_indices, 1):
         # Collect information for the component
         components_info_plot[index] = analyze_components(
