@@ -400,19 +400,73 @@ def avgsample (df,ind=['donor_ratio','concentration','annealing_t','spinspeed','
 
     return avgdf
 
+def build_error_array(A_min, A_max, error_func, k=1.0, include_max=True):
+
+    values = [A_min]
+    A = float(A_min)
+    while True:
+        sigma = error_func(A)
+        delta = k * sigma
+
+        if delta <= 0 or not np.isfinite(delta):
+            raise ValueError("Error function must return positive finite values.")
+
+        A_next = A + delta
+
+        if A_next >= A_max:
+            break
+
+        values.append(A_next)
+        A = A_next
+
+    if include_max:
+        values.append(A_max)
+
+    return np.array(values)
+
+
+
+def errorprop_donor(r,assume_concentration=15,sigma_mass=0.1,v_min=1000):
+    return sigma_mass * ((1000*r)/(assume_concentration*v_min))*np.sqrt(np.square(1+r**-1) + np.square(1+r))
+
+def errorprop_conc(c,sigma_masstotal=0.14,sigma_volume=3,v_min=1000):
+    return (1/v_min)*np.sqrt(1000000*np.square(sigma_masstotal)+np.square(c*sigma_volume))
+
+def errorprop_soladd(a,sigma_volume=3,sigma_additive=0.1,v_min=1000):
+    return (1/v_min)*np.sqrt(np.square(sigma_additive)+np.square(a*sigma_volume))
+
+
+def axis_label(var):
+    entry = label_map.get(var)
+    if entry is None:
+        return var
+    if entry["unit"]:
+        return f"{entry['name']} ({entry['unit']})"
+    return entry["name"]
+
+
+def title_label(var):
+    entry = label_map.get(var)
+    if entry is None:
+        return var
+    return entry["name"]
+
+
+
 
 # %% [markdown]
 # # Configuration
 
 # %%
 # Paths
-filename = 'DOE_Ace_DEMO.csv'  # Update with your filename, DOE_Ace.csv / DOE_1CN.csv
+filename = 'DOE_Ace.csv'  # Update with your filename, DOE_Ace.csv / DOE_1CN.csv
 base_name, ext = os.path.splitext(filename)
 directory_figure = os.path.join(base_name, 'Figures')
 directory_data = os.path.join(base_name, 'DataExport')
 #filename = 'DOE_Ace_avg.csv'  # Update with your filename
 baggingname = filename[:-4]+'_bag'#suffix or name format to use for bagged file versions
 modeloutputlog = 'modeloutput.csv'
+size_limit = 20**5 #Used for adaptive parameter space scaling
 
 #Bagging Parameters
 
@@ -422,16 +476,18 @@ input_headers = ['donor_ratio', 'concentration', 'spinspeed', 'annealing_t', 'so
 output_header = ['pce']
 random_state = 42
 test_size = 0.2
-total_bags = 6 
-bag = False #integer --> Default is None or integer to refer to the chosen bag number (starts at 0)
+total_bags = 5 #Default 5
+bag = None #integer --> Default is None or integer to refer to the chosen bag number (starts at 0)
+error_grid = True
 
 
 # Parameter bounds for prediction grid
 l_limit = np.array([0.5, 8.0, 800, 55, 0.0])
 u_limit = np.array([1.5, 22, 6000, 130, 5.0])
 
+
 # Grid resolution
-resolution = 20 #Default: 20
+resolution = 5 #Default: 20
 threshold_pce = 9  # User Input on minimum PCE threshold, recommend 9
 number_of_thresholds = 16 # Number of thresholds to analyze between initial threshold and max PCE, default 16
 
@@ -446,6 +502,10 @@ print(f"Loaded {len(df)} samples")
 
 # %% Breakdown and PseudoBagging OR averaging
 if bag is not None:
+    #print("================")
+    #print('CHECK LINE: ' + directory_data)
+    #print("================")
+
     for n in range(total_bags):
         #place data in the data export folder
         opvpseudobag(df,nth=n,ind=[trial_id,*input_headers],dep=output_header,name=baggingname+"_"+str(n),path=directory_data) 
@@ -517,15 +577,15 @@ print(f"Train size: {len(X_train)}, Test size: {len(X_test)}")
 
 
 # Train Random Forest with StandardScaler pipeline
-rfA_pipe = Pipeline([
+model_rf = Pipeline([
     ('scale', StandardScaler()),
     ('rf', RandomForestRegressor(n_estimators=100, random_state=random_state))
 ])
 
-rfA_pipe.fit(X_train, y_train)
+model_rf.fit(X_train, y_train)
 
 # Predict and evaluate
-y_pred = rfA_pipe.predict(X_test)
+y_pred = model_rf.predict(X_test)
 name = "Random Forest Pipeline"
 if (bag is not None): 
     name = "Random Forest Pipeline (Bag "+str(bag)+")"
@@ -534,11 +594,11 @@ r2 = evaluate_model(y_test, y_pred, name,directory = directory_data)
 # Retrain on full dataset for predictions
 X_full = df[input_headers]
 y_full = df[output_header].values.ravel()
-rfA_pipe.fit(X_full, y_full)
+model_rf.fit(X_full, y_full)
 
 # %% Create Feature importance plot
 # Feature importance on default RF model
-rf_model = rfA_pipe.named_steps['rf']
+rf_model = model_rf.named_steps['rf']
 start_time = time.time()
 importances_rfA = rf_model.feature_importances_
 std = np.std([tree.feature_importances_ for tree in rf_model.estimators_], axis=0)
@@ -555,22 +615,6 @@ fig.tight_layout()
 fig.savefig(os.path.join(directory_figure, "feature_importance_rf.png"), dpi=300, bbox_inches='tight')
 
 # %% Partial Dependence Plots
-
-def axis_label(var):
-    entry = label_map.get(var)
-    if entry is None:
-        return var
-    if entry["unit"]:
-        return f"{entry['name']} ({entry['unit']})"
-    return entry["name"]
-
-
-def title_label(var):
-    entry = label_map.get(var)
-    if entry is None:
-        return var
-    return entry["name"]
-
 
 label_map = {
     "spinspeed": {
@@ -604,7 +648,7 @@ for feature in feature_list:
 
 
     disp=PartialDependenceDisplay.from_estimator(
-        estimator=rfA_pipe,
+        estimator=model_rf,
         X=X_full,
         features=[feature],
         kind='average',
@@ -639,7 +683,7 @@ for f1, f2 in feature_pairs:
     fig, ax = plt.subplots(figsize=(5, 4))
 
     disp=PartialDependenceDisplay.from_estimator(
-        estimator=rfA_pipe,
+        estimator=model_rf,
         X=X_full,
         features=[(f1, f2)],
         kind='average',
@@ -663,20 +707,212 @@ for f1, f2 in feature_pairs:
 # # Generate Prediction Grid
 
 # %%
-# Create normalized grid
+# Create normalized cubic grid
+# Modify here to change sampling methods
 grid_points = [np.linspace(0, 1, resolution) for _ in range(5)]
 parameter_space = list(product(*grid_points))
 x_test_normalized = np.array(parameter_space)
 
-# Convert to actual values
+# Convert to actual values (Modify here to change test ranges)
 x_test_actual = x_test_normalized * (u_limit - l_limit) + l_limit
 df_x_test = pd.DataFrame(x_test_actual, columns=input_headers)
 
 # Predict
-y_pred_grid = rfA_pipe.predict(df_x_test)
+y_pred_grid = model_rf.predict(df_x_test)
 
 print(f"Generated {len(y_pred_grid)} predictions")
 print(f"PCE range: {y_pred_grid.min():.2f} - {y_pred_grid.max():.2f}")
+
+# %% 
+# Create grid scaled to anticipated experimental precision
+
+## Create a scaled grid with 3.2 Million point maximum size based on max resolution, assess limits
+if error_grid:
+    basis_sigma = 1
+    sigma_temp = 1# * basis_sigma
+    #sigma_temp = 5# * basis_sigma
+    sigma_spinspeed = 6000*0.0025#* basis_sigma Suppised to be 1.5 (about a quarter of a %)
+    #sigma_spinspeed = 100#* basis_sigma Suppised to be 1.5 (about a quarter of a %)
+    sigma_mass = 0.1#* basis_sigma
+    sigma_masstotal = 0.14#* basis_sigma #mg
+    sigma_volume = 3.0#* basis_sigma #host solvent, uL
+    sigma_additive = 0.1#* basis_sigma #additive, uL
+    assume_concentration = 15 #(8-22 mg/mL assumed equally distributed)
+    assume_donor = 1.0
+    assume_volume = 1000
+
+
+    #Check to see what resolution to use for the grid
+    print("----------")
+    print(f"Size Limit: {size_limit:.3e}")
+    print("----------")
+
+
+    # Actually create the error grid with scaling
+
+    print(f"Generating Scaled grid based on size limit {size_limit:.2e}...")
+    projected_size = np.inf
+    k=1
+    while projected_size > size_limit:
+        k += k
+        #Full error propagation
+        Temp_s_error = np.linspace(start=l_limit[3], stop=u_limit[3], num=round((u_limit[3]-l_limit[3])/(sigma_temp*k)), retstep=False)
+        Spin_s_error = np.linspace(start=l_limit[2], stop=u_limit[2], num=round((u_limit[2]-l_limit[2]) / (sigma_spinspeed*k)), retstep=False)
+        D_ratio_s_error = build_error_array(
+            l_limit[0],
+            u_limit[0],
+            lambda d: errorprop_donor(
+                d,
+                sigma_mass=sigma_mass
+            ),
+            k=k
+        )
+        Conc_s_error = build_error_array(
+            l_limit[1],
+            u_limit[1],
+            lambda c: errorprop_conc(
+                c,
+                sigma_masstotal=sigma_masstotal,
+                sigma_volume=sigma_volume
+            ),
+            k=k
+        )
+
+
+        Add_v_s_error = build_error_array(
+            l_limit[4],
+            u_limit[4],
+            lambda a: errorprop_conc(
+                a,
+                sigma_masstotal=sigma_masstotal,
+                sigma_volume=sigma_volume
+            ),
+            k=k
+        )
+        projected_size = len(Temp_s_error)*len(Spin_s_error)*len(D_ratio_s_error)*len(Conc_s_error)*len(Add_v_s_error)
+        print(f"Projected size is: {(projected_size):.2e} points")
+
+        print(f"Projected size is: {(100*projected_size/size_limit)}% of size limit")
+
+    print("==============")
+    print(f"Annealing Temp has {len(Temp_s_error)} points in it")
+    print(f"Spinspeed has {len(Spin_s_error)} points in it")
+    print(f"Donor Ratio has {len(D_ratio_s_error)} points in it")
+    print(f"Concentration has {len(Conc_s_error)} points in it")
+    print(f"Additive v/v % has {len(Add_v_s_error)} points in it")
+
+    paramater_space_error_scaled = []
+    # Generate the grid of points and filter by constraint
+    for i, x in enumerate(D_ratio_s_error):
+        for j, y in enumerate(Conc_s_error):
+            for q, z in enumerate(Spin_s_error):
+                for l, w in enumerate(Temp_s_error):
+                    for m, v in enumerate(Add_v_s_error):
+                        paramater_space_error_scaled.append([x, y, z, w, v]) # 5D
+    print(f"FINAL VALUE OF k: {k}")
+    print(f"Creating A Custom Grid: {len(paramater_space_error_scaled):.2e} points")
+    print("==============")
+
+    # Populate table_error and show predictions
+    x_test_error = np.asarray(paramater_space_error_scaled, dtype=float)
+    print(f"Creating Scaled Sampling Grid: {len(paramater_space_error_scaled):.0f} points")
+
+
+    df_x_test_error = pd.DataFrame(x_test_error, columns=input_headers)
+    y_pred_error = model_rf.predict(df_x_test_error) #Populate the grid using numerical predictions - TEST LINE #ZSAVE
+
+
+    #Sanity check to make sure the PCE's are within expectations 
+    table_error = round(pd.DataFrame(y_pred_error, columns=['Prediction']).describe(), 2)
+    table_error = pd.concat([table_error], axis=1, keys=['Error Scaled Predictions'])
+    table_error.to_csv(os.path.join(directory_data, "error_scaled_predictions_summary.csv"))
+    print(table_error) 
+
+# %% Export the parametrer space metadata
+if error_grid:
+    # === Export parameter space metadata ===
+
+    metadata_path = os.path.join(directory_data, "error_scaled_grid_metadata.txt")
+
+    with open(metadata_path, "w") as f:
+
+        f.write("=== ERROR-SCALED PARAMETER SPACE METADATA ===\n\n")
+
+        # --- Grid scaling info ---
+        f.write("GRID SCALING PARAMETERS:\n")
+        f.write(f"Final k value: {k}\n")
+        f.write(f"Size limit: {size_limit:.2e}\n")
+        f.write(f"Projected grid size: {projected_size:.2e}\n")
+        f.write(f"Actual grid size: {len(paramater_space_error_scaled):.2e}\n")
+        f.write("\n")
+
+        # --- Axis Arrays ---
+        f.write("AXIS ARRAYS:\n")
+        f.write(f"Donor Ratio points: {D_ratio_s_error}\n")
+        f.write(f"Concentration points: {Conc_s_error}\n")
+        f.write(f"Spinspeed points: {Spin_s_error}\n")
+        f.write(f"Annealing Temp points: {Temp_s_error}\n")
+        f.write(f"Additive v/v % points: {Add_v_s_error}\n")
+        f.write("\n")
+
+        # --- Axis resolutions ---
+        f.write("AXIS RESOLUTIONS:\n")
+        f.write(f"Donor Ratio points: {len(D_ratio_s_error)}\n")
+        f.write(f"Concentration points: {len(Conc_s_error)}\n")
+        f.write(f"Spinspeed points: {len(Spin_s_error)}\n")
+        f.write(f"Annealing Temp points: {len(Temp_s_error)}\n")
+        f.write(f"Additive v/v % points: {len(Add_v_s_error)}\n")
+        f.write("\n")
+
+        # --- Parameter bounds ---
+        f.write("PARAMETER BOUNDS:\n")
+        #f.write(f"Donor Ratio: [{l_limit[0]}, {u_limit[0]}]\n")
+        #f.write(f"Concentration: [{l_limit[1]}, {u_limit[1]}]\n")
+        #f.write(f"Spinspeed: [{l_limit[2]}, {u_limit[2]}]\n")
+        #f.write(f"Annealing Temp: [{l_limit[3]}, {u_limit[3]}]\n")
+        #f.write(f"Additive v/v %: [{l_limit[4]}, {u_limit[4]}]\n")
+        f.write(f"Donor Ratio: [{min(D_ratio_s_error)}, {max(D_ratio_s_error)}]\n")
+        f.write(f"Concentration: [{min(Conc_s_error)}, {max(Conc_s_error)}]\n")
+        f.write(f"Spinspeed: [{min(Spin_s_error)}, {max(Spin_s_error)}]\n")
+        f.write(f"Annealing Temp: [{min(Temp_s_error)}, {max(Temp_s_error)}]\n")
+        f.write(f"Additive v/v %: [{min(Add_v_s_error)}, {max(Add_v_s_error)}]\n")
+        f.write("\n")
+
+        # --- Error model parameters ---
+        f.write("ERROR MODEL PARAMETERS:\n")
+        f.write(f"sigma_mass: {sigma_mass}\n")
+        f.write(f"sigma_masstotal: {sigma_masstotal}\n")
+        f.write(f"sigma_volume: {sigma_volume}\n")
+        f.write(f"sigma_spinspeed: {sigma_spinspeed}\n")
+        f.write(f"sigma_temp: {sigma_temp}\n")
+        f.write("\n")
+
+        # --- Error model parameters ---
+        shape = (
+            len(D_ratio_s_error),
+            len(Conc_s_error),
+            len(Spin_s_error),
+            len(Temp_s_error),
+            len(Add_v_s_error)
+        )
+
+        f.write(f"Grid shape: {shape}\n")
+
+        # --- Prediction summary ---
+        f.write("PREDICTION SUMMARY (from describe()):\n")
+        f.write(table_error.to_string())
+        f.write("\n\n")
+
+    print(f"Metadata exported to: {metadata_path}")
+
+# %% Set the grid for connected component analysis
+if error_grid:
+    x_test = x_test_error.copy()
+    df_x_test = df_x_test_error.copy()
+    y_pred = y_pred_error.copy()
+    print("Using Experimental-Error Scaled Grid!")
+else: print("Using uniform (linear cubic) grid")
+
 
 # %% [markdown]
 # # Connected Components Analysis
