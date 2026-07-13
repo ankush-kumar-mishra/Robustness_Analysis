@@ -471,11 +471,11 @@ size_limit = 20**5 #Used for adaptive parameter space scaling
 #Bagging Parameters
 
 # Parameters
-trial_id = 'set'
+trial_id = 'set' #used to distinguish individual combination of parameters. Trials share the same ID, but have a trial letter designation under 'trial'
 input_headers = ['donor_ratio', 'concentration', 'spinspeed', 'annealing_t', 'sol_add_v_perc']
 output_header = ['pce']
-random_state = 42
-test_size = 0.2
+random_state = 42 #Default 42
+test_size = 0.2 #Default 0.2
 total_bags = 5 #Default 5
 bag = None #integer --> Default is None or integer to refer to the chosen bag number (starts at 0)
 error_grid = True
